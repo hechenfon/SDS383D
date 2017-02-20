@@ -10,13 +10,8 @@ rbeta = function(m2,k2,w2){
 
 rlambda<-function(h, n, beta, w, Y, X) {
   #sampling from conditional distribution of lambda given y, beta and w
-  #a = (h+1)/2
-  #b = (1/2)*(w*rss+h)
-  #lambda = rgamma(n, shape = a, rate = b)
-  #lambda = rgamma(n, shape = rep(a,n), rate = b)
   lambda = rgamma(n, rep(h/2+1/2,n),h/2+w*(Y-X %*% beta)^2/2)
-  #return(lambda)
-  
+  return(lambda)
   
 } 
 
@@ -71,14 +66,6 @@ beta_post= m2
 #pred_y = X %*% beta_post
 
 
-
-
-
-
-
-
-
-
 ##############HEAVY-TAILED part###############
 iter = 1e4
 x_dim = 2
@@ -118,10 +105,7 @@ for(i in 2:iter){
   #beta[i,] = rbeta(y, w, lambda, x, k, m)
   w[i] =rw(d2, eta2)
   
-  #rss
-  #rss = crossprod(Y - X%*%beta[i,])
   # sample each lambda 
-  #lambda[i,] = rlambda(h, n, beta[i,], w[i], rss)
   lambda[i,] = rlambda(h, n, beta[i,], w[i], Y,X)
   #lambda[i,] = rgamma(n, rep(h/2+1/2,n),h/2+w[i]*(Y-X %*% beta[i,])^2/2)
   lambda_p = diag(lambda[i,])
