@@ -13,6 +13,7 @@ library(psych)
 library(covreg)
 library(ggplot2)
 library(MCMCpack)
+library(easyGgplot2)
 
 #house clean
 rm(list=ls())
@@ -30,8 +31,13 @@ gexp <- scale(gexp,center=T,scale=T)
 #64 cell data
 g64.exp <- gexp[grepl('64C',row.names(gexp)),]
 
+############################
+###heatmap for clustering###
+############################
+pdf('./figures/heatmap.pdf')
 #heatmap on 64 cell level
 hm<-heatmap(as.matrix(g64.exp))
+dev.off()
 
 #add biological label(64 cells based on hierarchical clustering, 1...32 based on experiment)
 cell.grp<-as.data.frame(cutree(hclust(dist(g64.exp)),k=3))
@@ -52,40 +58,52 @@ names(gexp)[48] <- 'bio.lab'
 rownames(gexp) = gexp[,1]
 gexp<-gexp[,-c(1)]
 
-#PCA analysis for 64 cells level
+
+#################################################
+######PCA analysis for 64 cells level############
+#################################################
+pdf('./figures/PCA.pdf',width=10,height=5)
 g64.exp <- gexp[grepl('64C',row.names(gexp)),]
 g64.pca<-prcomp(g64.exp[,1:46]) 
-summary(g64.pca)  #first 2 pc variance: 0.5347+0.1327
-autoplot(g64.pca,data=g64.exp,colour='bio.lab')
+summary(g64.pca)  #first 2 pc variance: 0.5347+0.1327, choose 2 PCs later
+
+gexp.rv = as.matrix(g64.exp[,1:46]) %*% g64.pca$rotation
+rv.lab = data.frame(gexp.rv[,1:2],g64.exp$bio.lab)
+colnames(rv.lab) = c('PC1','PC2','bio.lab')
+g1<-ggplot(rv.lab,aes(x=PC1,y=PC2,color=bio.lab))+geom_point()+theme_bw()
 #PCA map all cells
 gexp.rv = as.matrix(gexp[,1:46]) %*% g64.pca$rotation
 rv.lab = data.frame(gexp.rv[,1:2],gexp$bio.lab)
 colnames(rv.lab) = c('PC1','PC2','bio.lab')
 #map all cells on the PC1-PC2 subspace
-#qplot(PC1,PC2,data=rv.lab,colour=bio.lab)
-ggplot(rv.lab,aes(x=PC1,y=PC2,color=bio.lab))+geom_point()+theme_bw()
+g2<-ggplot(rv.lab,aes(x=PC1,y=PC2,color=bio.lab))+geom_point()+theme_bw()
+ggplot2.multiplot(g1,g2, cols=2)
+dev.off()
 
-
+#####################################################
 ###public available FA package for factor analysis###
+#####################################################
+pdf('./figures/FA.pdf')
 fld<-fa(g64.exp[,1:46],nfactors = 2,rotate='varimax',fm="minres")
 fld.res<-data.frame(fld$scores,g64.exp$bio.lab)
 #ld <- fld$loadings
 #fld.res<-data.frame(t(solve(t(ld) %*% ld) %*% t(ld) %*% t(as.matrix(gexp[,1:46]))),gexp$bio.lab)
 colnames(fld.res)<-c('FA1','FA2','bio.lab')
 ggplot(fld.res,aes(x=FA1,y=FA2,color=bio.lab))+geom_point()+theme_bw()
+dev.off()
 
 
-
-
-#####GIBBS start here######
+############################
+######Full Bayesian#########
+############################
 X = as.matrix(g64.exp[,1:46])
 n = dim(X)[1]   #number of observation
 p = dim(X)[2]   #number of original dimension
 m = 2           #number of target dimension
 
-###set up parameters###
-NMC = 50000
-burn = 30000
+######set up parameters#####
+NMC = 10000
+burn = 1000
 thin = 2
 
 #save sampled values
@@ -104,7 +122,7 @@ lb.save[,,1] = fld$loadings
 phi.save[,,1] = diag(p)
 f.save[,,1] = fld$scores
 
-#sampling
+######Gibbs sampling#############
 for (iter in 2:(NMC+burn)) {
   if(iter %% 200 == 0) cat(paste0("Iteration ", iter, "\n"))
   
@@ -130,8 +148,10 @@ for (iter in 2:(NMC+burn)) {
 #thin the chain
 sel.id = seq(burn,NMC+burn,thin)
 
-#analyze gibbs results
-#brief check mix
+################################
+#####analyze gibbs results######
+################################
+#brief check mixing
 plot(lb.save[1,1,sel.id])
 
 #calculate posterior means
@@ -139,9 +159,19 @@ lb.pm = apply(lb.save[,,sel.id],c(1,2),mean)
 phi.pm = apply(phi.save[,,sel.id],c(1,2),mean)
 f.pm = apply(f.save[,,sel.id],c(1,2),mean)
 
-dt<-data.frame(f.pm,g64.exp$bio.lab)
-names(dt)<-c('FA1','FA2','bio.lab')
-ggplot(dt,aes(x=FA1,y=FA2,color=bio.lab))+geom_point()+theme_bw()
+ld<-lb.pm
+col<-rainbow(3)
+syb<-c(19,15,17)
+f.pred = data.frame(t(solve(t(ld) %*% ld) %*% t(ld) %*% t(X)),g64.exp$bio.lab)
+names(f.pred)<-c('FA1','FA2','bio.lab')
+g1<-ggplot(f.pred,aes(x=FA1,y=FA2,color = bio.lab,shape=bio.lab))+geom_point()+theme_bw()+
+  scale_colour_manual(name = "cell types",values=c(col[2],col[3],col[1]))+
+  scale_shape_manual(name= "cell types", values=c(syb[3],syb[3],syb[3]))
 
+f.pred = data.frame(t(solve(t(ld) %*% ld) %*% t(ld) %*% t(as.matrix(gexp[,1:46]))),gexp$bio.lab)
+names(f.pred)<-c('FA1','FA2','bio.lab')
+g2<-ggplot(f.pred,aes(x=FA1,y=FA2,color = bio.lab,shape=bio.lab))+geom_point()+theme_bw()+
+  scale_colour_manual(name = "cell types",values=c(col[2],col[3],col[1],col[2],col[3],col[1],col[2],col[3],col[1]))+
+  scale_shape_manual(name= "cell types", values=c(rep(syb[1],3),rep(syb[2],3),rep(syb[3],3)))
+ggplot2.multiplot(g1,g2, cols=2)
 
-#varimax rotation
